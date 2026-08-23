@@ -23,8 +23,9 @@ button{font:inherit;border:0;border-radius:10px;padding:9px 11px;font-weight:700
 <section class="card"><div class="grid">
 <div><label>Ημερομηνία</label><input id="date" type="date"></div><div><label>Βάρδια</label><input id="shift" placeholder="π.χ. Βραδινή"></div>
 <div class="full"><label>Διαδρομή</label><input id="route" placeholder="π.χ. Λαγανάς → Αεροδρόμιο"></div>
-<div><label>Ποσό (€)</label><input id="amount" type="number" step=".01"></div>
-<div><label>Πληρωμή</label><select id="pay"><option value="cash">Μετρητά</option><option value="card">Κάρτα</option></select></div>
+<div><label>Κάρτα (€)</label><input id="cardAmount" type="number" min="0" step=".01" inputmode="decimal" value="0"></div>
+<div><label>Μετρητά (€)</label><input id="cashAmount" type="number" min="0" step=".01" inputmode="decimal" value="0"></div>
+<div class="full"><div style="display:flex;justify-content:space-between"><b>Σύνολο δρομολογίου</b><strong id="tripTotal">0,00€</strong></div></div>
 <div class="full"><label>Tips που αφαιρούνται από τα μετρητά (€)</label><input id="tip" type="number" step=".01" value="0"></div>
 </div><button class="primary" onclick="addTrip()">＋ Καταχώρηση δρομολογίου</button></section>
 
@@ -53,22 +54,59 @@ button{font:inherit;border:0;border-radius:10px;padding:9px 11px;font-weight:700
 </div>
 </main>
 <script>
-const TK='taxi_trips_v1',EK='taxi_expenses_v1';let trips=JSON.parse(localStorage.getItem(TK)||'[]'),expenses=JSON.parse(localStorage.getItem(EK)||'[]');
+const TK='taxi_trips_v1',EK='taxi_expenses_v1';let trips=JSON.parse(localStorage.getItem(TK)||'[]'),expenses=JSON.parse(localStorage.getItem(EK)||'[]');function migrateOldTrips(){
+let changed=false;
+trips=trips.map(x=>{
+if(typeof x.card==='number'&&typeof x.cash==='number')return x;
+let amount=Number(x.amount)||0;
+changed=true;
+return {...x,amount,card:x.pay==='card'?amount:0,cash:x.pay==='cash'?amount:0};
+});
+if(changed)localStorage.setItem(TK,JSON.stringify(trips));
+}
+migrateOldTrips();
+
 const $=x=>document.getElementById(x),money=x=>Number(x||0).toLocaleString('el-GR',{minimumFractionDigits:2,maximumFractionDigits:2})+'€';
 $('date').value=new Date().toISOString().slice(0,10);$('hdate').value=$('date').value;$('group').value=localStorage.getItem('taxi_group')||'';$('group').oninput=()=>localStorage.setItem('taxi_group',$('group').value);
 function save(){localStorage.setItem(TK,JSON.stringify(trips));localStorage.setItem(EK,JSON.stringify(expenses));render();renderHistory()}
-function calc(d,s){let t=trips.filter(x=>x.date==d&&(!s||x.shift==s)),e=expenses.filter(x=>x.date==d&&(!s||x.shift==s));let gross=t.reduce((a,x)=>a+x.amount,0),card=t.filter(x=>x.pay=='card').reduce((a,x)=>a+x.amount,0),cash=t.filter(x=>x.pay=='cash').reduce((a,x)=>a+x.amount,0),tips=t.reduce((a,x)=>a+x.tip,0),ex=e.reduce((a,x)=>a+x.amount,0);return{t,e,gross,card,cash,tips,ex,deliver:cash-tips-ex}}
-function addTrip(){let a=+$('amount').value;if(!a)return alert('Βάλε ποσό.');trips.push({id:Date.now(),date:$('date').value,shift:$('shift').value.trim(),route:$('route').value.trim()||'Χωρίς περιγραφή',amount:a,pay:$('pay').value,tip:+$('tip').value||0,time:new Date().toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'})});$('route').value='';$('amount').value='';$('tip').value=0;save()}
+function calc(d,s){let t=trips.filter(x=>x.date==d&&(!s||x.shift==s)),e=expenses.filter(x=>x.date==d&&(!s||x.shift==s));let gross=t.reduce((a,x)=>a+(Number(x.amount)||0),0),card=t.reduce((a,x)=>a+(Number(x.card)||0),0),cash=t.reduce((a,x)=>a+(Number(x.cash)||0),0),tips=t.reduce((a,x)=>a+(Number(x.tip)||0),0),ex=e.reduce((a,x)=>a+(Number(x.amount)||0),0);return{t,e,gross,card,cash,tips,ex,deliver:cash-tips-ex}}
+function addTrip(){
+let card=+$('cardAmount').value||0,cash=+$('cashAmount').value||0,total=card+cash;
+if(total<=0)return alert('Βάλε ποσό σε κάρτα ή/και μετρητά.');
+trips.push({id:Date.now(),date:$('date').value,shift:$('shift').value.trim(),route:$('route').value.trim()||'Χωρίς περιγραφή',amount:total,card,cash,tip:+$('tip').value||0,time:new Date().toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'})});
+$('route').value='';$('cardAmount').value='';$('cashAmount').value='';$('tip').value=0;updateTripTotal();save()
+}
+
 function addExpense(){let d=$('ed').value.trim(),a=+$('ea').value;if(!d)return alert('Βάλε περιγραφή.');if(!a)return alert('Βάλε ποσό.');expenses.push({id:Date.now(),date:$('date').value,shift:$('shift').value.trim(),description:d,amount:a,time:new Date().toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'})});$('ed').value='';$('ea').value='';save()}
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 function share(text){if(navigator.share) return navigator.share({title:'Taxi Shift',text}).catch(e=>{if(e.name!='AbortError')fallback(text)});fallback(text)}
 function fallback(t){navigator.clipboard?.writeText(t).then(()=>alert('Το μήνυμα αντιγράφηκε. Άνοιξε το WhatsApp Group και κάνε επικόλληση.')).catch(()=>prompt('Αντέγραψε:',t))}
-function tripText(x){return x.route+'\nΠοσό: '+money(x.amount)+'\nΠληρωμή: '+(x.pay=='card'?'Κάρτα':'Μετρητά')+'\nΏρα: '+x.time+(x.tip?'\nTips: -'+money(x.tip):'')}
+function paymentLabel(x){
+let c=Number(x.card)||0,m=Number(x.cash)||0;
+if(c&&m)return 'Κάρτα '+money(c)+' · Μετρητά '+money(m);
+if(c)return 'Κάρτα '+money(c);
+return 'Μετρητά '+money(m);
+}
+function tripText(x){
+let card=Number(x.card)||0,cash=Number(x.cash)||0;
+let t=x.route+'\\nΠοσό: '+money(x.amount);
+if(card>0&&cash>0){
+t+='\\nΚάρτα: '+money(card);
+t+='\\nΜετρητά: '+money(cash);
+}else if(card>0){
+t+='\\nΠληρωμή: Κάρτα';
+}else{
+t+='\\nΠληρωμή: Μετρητά';
+}
+if(Number(x.tip)>0)t+='\\nTips: -'+money(x.tip);
+return t;
+}
+
 function sendTrip(id){let x=trips.find(x=>x.id==id);if(x)share(tripText(x))}
 function summaryText(d,s){let r=calc(d,s),t='Γενικό σύνολο: '+money(r.gross)+'\nΚάρτα: '+money(r.card)+'\nΜετρητά: '+money(r.cash)+'\nTips: '+money(r.tips)+'\nΈξοδα:';if(r.e.length)r.e.forEach(x=>t+='\n- '+x.description+': '+money(x.amount));else t+='\n- Κανένα';return t+'\nΠαραδοτέο ταμείο: '+money(r.deliver)}
 function sendSummary(){let d=$('date').value,s=$('shift').value.trim(),r=calc(d,s);if(!r.t.length&&!r.e.length)return alert('Δεν υπάρχουν δεδομένα.');share(summaryText(d,s))}
 function render(){let d=$('date').value,s=$('shift').value.trim(),r=calc(d,s);$('gross').textContent=money(r.gross);$('card').textContent=money(r.card);$('cash').textContent=money(r.cash);$('tips').textContent=money(r.tips);$('ex').textContent=money(r.ex);$('deliver').textContent=money(r.deliver);
-$('tripsList').innerHTML=r.t.length?r.t.map(x=>'<div class="row"><div><b>'+esc(x.route)+'</b><div class="small">'+x.time+' · '+(x.pay=='card'?'Κάρτα':'Μετρητά')+(x.tip?' · tips -'+money(x.tip):'')+'</div></div><div><b>'+money(x.amount)+'</b><div class="actions"><button class="wa" onclick="sendTrip('+x.id+')">📲 WhatsApp</button><button class="danger" onclick="delTrip('+x.id+')">Διαγραφή</button></div></div></div>').join(''):'<div class="small">Δεν υπάρχουν δρομολόγια.</div>';
+$('tripsList').innerHTML=r.t.length?r.t.map(x=>'<div class="row"><div><b>'+esc(x.route)+'</b><div class="small">'+x.time+' · '+paymentLabel(x)+(x.tip?' · tips -'+money(x.tip):'')+'</div></div><div><b>'+money(x.amount)+'</b><div class="actions"><button class="wa" onclick="sendTrip('+x.id+')">📲 WhatsApp</button><button class="danger" onclick="delTrip('+x.id+')">Διαγραφή</button></div></div></div>').join(''):'<div class="small">Δεν υπάρχουν δρομολόγια.</div>';
 $('expensesList').innerHTML=r.e.length?r.e.map(x=>'<div class="row"><div><b>'+esc(x.description)+'</b><div class="small">'+x.time+'</div></div><div><b>'+money(x.amount)+'</b> <button class="danger" onclick="delExp('+x.id+')">Διαγραφή</button></div></div>').join(''):'<div class="small">Δεν υπάρχουν έξοδα.</div>'}
 function delTrip(id){trips=trips.filter(x=>x.id!=id);save()}function delExp(id){expenses=expenses.filter(x=>x.id!=id);save()}
 function clearShift(){let d=$('date').value,s=$('shift').value.trim();if(confirm('Να διαγραφούν όλα τα δεδομένα αυτής της βάρδιας;')){trips=trips.filter(x=>!(x.date==d&&x.shift==s));expenses=expenses.filter(x=>!(x.date==d&&x.shift==s));save()}}
@@ -77,5 +115,11 @@ function renderHistory(){let ds=[...new Set([...trips.map(x=>x.date),...expenses
 function selectDay(d){$('hdate').value=d;renderHistoryDay()}
 function renderHistoryDay(){let d=$('hdate').value;if(!d)return;let r=calc(d),sh=[...new Set([...r.t.map(x=>x.shift),...r.e.map(x=>x.shift)])],h='<h3>📅 '+d+'</h3><div class="stats"><div class="stat">Γενικό σύνολο<b>'+money(r.gross)+'</b></div><div class="stat">Κάρτα<b>'+money(r.card)+'</b></div><div class="stat">Μετρητά<b>'+money(r.cash)+'</b></div><div class="stat">Tips<b>'+money(r.tips)+'</b></div><div class="stat">Έξοδα<b>'+money(r.ex)+'</b></div></div><div class="total"><b>Παραδοτέο ταμείο: '+money(r.deliver)+'</b></div><p><button class="wa" onclick="share(summaryText(\''+d+'\',null))">📲 WhatsApp ημέρας</button></p>';
 sh.forEach(s=>{let q=calc(d,s);h+='<div class="day"><b>Βάρδια: '+esc(s||'Χωρίς όνομα')+'</b><div class="small">Σύνολο '+money(q.gross)+' · 卡τα '+money(q.card)+' · Μετρητά '+money(q.cash)+' · Tips '+money(q.tips)+' · Έξοδα '+money(q.ex)+' · Παραδοτέο '+money(q.deliver)+'</div><hr><b>Δρομολόγια</b>';q.t.forEach(x=>h+='<div class="row"><div>'+esc(x.route)+'<div class="small">'+x.time+' · '+(x.pay=='card'?'Κάρτα':'Μετρητά')+'</div></div><b>'+money(x.amount)+'</b></div>');h+='<b>Έξοδα</b>';q.e.forEach(x=>h+='<div class="row"><div>'+esc(x.description)+'</div><b>'+money(x.amount)+'</b></div>');h+='</div>'});$('hday').innerHTML=h}
-$('date').onchange=render;$('shift').oninput=render;render();renderHistory();
+function updateTripTotal(){
+let c=+$('cardAmount').value||0,m=+$('cashAmount').value||0;
+$('tripTotal').textContent=money(c+m);
+}
+$('cardAmount').oninput=updateTripTotal;
+$('cashAmount').oninput=updateTripTotal;
+$('date').onchange=render;$('shift').oninput=render;updateTripTotal();render();renderHistory();
 </script></body></html>
