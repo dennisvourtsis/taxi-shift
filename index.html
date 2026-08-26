@@ -89,17 +89,17 @@ return 'Μετρητά '+money(m);
 }
 function tripText(x){
 let card=Number(x.card)||0,cash=Number(x.cash)||0;
-let t=x.route+'\\nΠοσό: '+money(x.amount);
+let lines=[x.route,'Ποσό: '+money(x.amount)];
 if(card>0&&cash>0){
-t+='\\nΚάρτα: '+money(card);
-t+='\\nΜετρητά: '+money(cash);
+  lines.push('Κάρτα: '+money(card));
+  lines.push('Μετρητά: '+money(cash));
 }else if(card>0){
-t+='\\nΠληρωμή: Κάρτα';
+  lines.push('Πληρωμή: Κάρτα');
 }else{
-t+='\\nΠληρωμή: Μετρητά';
+  lines.push('Πληρωμή: Μετρητά');
 }
-if(Number(x.tip)>0)t+='\\nTips: -'+money(x.tip);
-return t;
+if(Number(x.tip)>0) lines.push('Tips: -'+money(x.tip));
+return lines.join(String.fromCharCode(10));
 }
 
 function sendTrip(id){let x=trips.find(x=>x.id==id);if(x)share(tripText(x))}
