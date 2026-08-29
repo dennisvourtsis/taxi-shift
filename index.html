@@ -27,7 +27,10 @@ button{font:inherit;border:0;border-radius:10px;padding:9px 11px;font-weight:700
 <div><label>Μετρητά (€)</label><input id="cashAmount" type="number" min="0" step=".01" inputmode="decimal" value="0"></div>
 <div class="full"><div style="display:flex;justify-content:space-between"><b>Σύνολο δρομολογίου</b><strong id="tripTotal">0,00€</strong></div></div>
 <div class="full"><label>Tips που αφαιρούνται από τα μετρητά (€)</label><input id="tip" type="number" step=".01" value="0"></div>
-</div><button class="primary" onclick="addTrip()">＋ Καταχώρηση δρομολογίου</button></section>
+</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+<button class="primary" style="flex:1;margin-top:0" onclick="addTrip()">＋ Καταχώρηση δρομολογίου</button>
+<button class="wa" id="saveWhatsappBtn" style="flex:1;padding:13px" onclick="addTripAndWhatsApp()">📲 Καταχώρηση & αποστολή WhatsApp</button>
+</div></section>
 
 <section class="card"><strong>Γενικά έξοδα</strong><p class="small">Τα έξοδα αφαιρούνται πάντα από τα μετρητά.</p>
 <div class="grid"><div><label>Περιγραφή</label><input id="ed" placeholder="π.χ. Πλύσιμο"></div><div><label>Ποσό (€)</label><input id="ea" type="number" step=".01"></div></div>
@@ -70,6 +73,16 @@ const $=x=>document.getElementById(x),money=x=>Number(x||0).toLocaleString('el-G
 $('date').value=new Date().toISOString().slice(0,10);$('hdate').value=$('date').value;$('group').value=localStorage.getItem('taxi_group')||'';$('group').oninput=()=>localStorage.setItem('taxi_group',$('group').value);
 function save(){localStorage.setItem(TK,JSON.stringify(trips));localStorage.setItem(EK,JSON.stringify(expenses));render();renderHistory()}
 function calc(d,s){let t=trips.filter(x=>x.date==d&&(!s||x.shift==s)),e=expenses.filter(x=>x.date==d&&(!s||x.shift==s));let gross=t.reduce((a,x)=>a+(Number(x.amount)||0),0),card=t.reduce((a,x)=>a+(Number(x.card)||0),0),cash=t.reduce((a,x)=>a+(Number(x.cash)||0),0),tips=t.reduce((a,x)=>a+(Number(x.tip)||0),0),ex=e.reduce((a,x)=>a+(Number(x.amount)||0),0);return{t,e,gross,card,cash,tips,ex,deliver:cash-tips-ex}}
+function addTripAndWhatsApp(){
+let card=+$('cardAmount').value||0,cash=+$('cashAmount').value||0,total=card+cash;
+if(total<=0)return alert('Βάλε ποσό σε κάρτα ή/και μετρητά.');
+let route=$('route').value.trim()||'Χωρίς περιγραφή';
+let tip=+$('tip').value||0;
+let x={id:Date.now(),date:$('date').value,shift:$('shift').value.trim(),route,amount:total,card,cash,tip,time:new Date().toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'})};
+trips.push(x);
+$('route').value='';$('cardAmount').value='';$('cashAmount').value='';$('tip').value=0;updateTripTotal();save();
+share(tripText(x));
+}
 function addTrip(){
 let card=+$('cardAmount').value||0,cash=+$('cashAmount').value||0,total=card+cash;
 if(total<=0)return alert('Βάλε ποσό σε κάρτα ή/και μετρητά.');
