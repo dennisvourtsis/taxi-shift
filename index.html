@@ -15,6 +15,11 @@ button{font:inherit;border:0;border-radius:10px;padding:9px 11px;font-weight:700
 .actions{display:flex;gap:5px;justify-content:flex-end;margin-top:5px}.actions button{font-size:12px;padding:7px}
 .tabs{display:flex;gap:7px;margin-bottom:10px}.tab{flex:1;background:#edf2f0}.tab.active{background:#075e54;color:#fff}
 .day{border:1px solid #e0e6e4;border-radius:12px;margin-top:9px;padding:11px}.total{border-top:1px solid #ddd;margin-top:7px;padding-top:10px;font-size:18px}
+</style><style id="v23-print-style">
+@media print{
+  body>*{display:none!important}
+  #v23-print-area{display:block!important;position:absolute;left:0;top:0;width:100%;font-family:monospace;white-space:pre-wrap;font-size:14px;line-height:1.4}
+}
 </style></head><body>
 <header><h2>🚕 Taxi Shift</h2><div>Δρομολόγια • Έξοδα • Ημέρες • WhatsApp</div></header>
 <main>
@@ -55,6 +60,24 @@ button{font:inherit;border:0;border-radius:10px;padding:9px 11px;font-weight:700
 <label>Επιλογή ημέρας</label><input id="hdate" type="date" onchange="renderHistoryDay()"></section>
 <section class="card" id="hday"></section><section class="card"><strong>Προηγούμενες ημέρες</strong><div id="days"></div></section>
 </div>
+
+<section class="card" id="cashTotals">
+<strong>Σύνολα ταμείων</strong>
+<p class="small">Επίλεξε την πρώτη και την τελευταία ημέρα για συγκεντρωτική εικόνα ταμείου.</p>
+<div class="grid">
+<div><label>Από ημερομηνία</label><input id="fromDate" type="date"></div>
+<div><label>Έως ημερομηνία</label><input id="toDate" type="date"></div>
+</div>
+<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+<button class="primary" style="flex:1;margin-top:0" onclick="showCashTotals()">Υπολογισμός συνόλων</button>
+</div>
+<div id="cashTotalsResult" style="margin-top:10px"></div>
+<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+<button class="wa" style="flex:1" onclick="sendCashTotalsWhatsApp()">📲 WhatsApp</button>
+<button class="muted" style="flex:1" onclick="printCashTotals()">🖨️ Εκτύπωση</button>
+</div>
+</section>
+
 </main>
 <script>
 const TK='taxi_trips_v1',EK='taxi_expenses_v1';let trips=JSON.parse(localStorage.getItem(TK)||'[]'),expenses=JSON.parse(localStorage.getItem(EK)||'[]');function migrateOldTrips(){
@@ -116,7 +139,7 @@ return lines.join(String.fromCharCode(10));
 }
 
 function sendTrip(id){let x=trips.find(x=>x.id==id);if(x)share(tripText(x))}
-function summaryText(d,s){let r=calc(d,s),t='Γενικό σύνολο: '+money(r.gross)+'\nΚάρτα: '+money(r.card)+'\nΜετρητά: '+money(r.cash)+'\nTips: '+money(r.tips)+'\nΈξοδα:';if(r.e.length)r.e.forEach(x=>t+='\n- '+x.description+': '+money(x.amount));else t+='\n- Κανένα';return t+'\nΠαραδοτέο ταμείο: '+money(r.deliver)}
+function summaryText(d,s){let r=calc(d,s),fmtDate=x=>{let p=String(x||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:x},t='Ημερομηνία: '+fmtDate(d)+'\nΓενικό σύνολο: '+money(r.gross)+'\nΚάρτα: '+money(r.card)+'\nΜετρητά: '+money(r.cash)+'\nTips: '+money(r.tips)+'\nΈξοδα:';if(r.e.length)r.e.forEach(x=>t+='\n- '+x.description+': '+money(x.amount));else t+='\n- Κανένα';return t+'\nΠαραδοτέο ταμείο: '+money(r.deliver)}
 function sendSummary(){let d=$('date').value,s=$('shift').value.trim(),r=calc(d,s);if(!r.t.length&&!r.e.length)return alert('Δεν υπάρχουν δεδομένα.');share(summaryText(d,s))}
 function render(){let d=$('date').value,s=$('shift').value.trim(),r=calc(d,s);$('gross').textContent=money(r.gross);$('card').textContent=money(r.card);$('cash').textContent=money(r.cash);$('tips').textContent=money(r.tips);$('ex').textContent=money(r.ex);$('deliver').textContent=money(r.deliver);
 $('tripsList').innerHTML=r.t.length?r.t.map(x=>'<div class="row"><div><b>'+esc(x.route)+'</b><div class="small">'+x.time+' · '+paymentLabel(x)+(x.tip?' · tips -'+money(x.tip):'')+'</div></div><div><b>'+money(x.amount)+'</b><div class="actions"><button class="wa" onclick="sendTrip('+x.id+')">📲 WhatsApp</button><button class="danger" onclick="delTrip('+x.id+')">Διαγραφή</button></div></div></div>').join(''):'<div class="small">Δεν υπάρχουν δρομολόγια.</div>';
@@ -135,4 +158,69 @@ $('tripTotal').textContent=money(c+m);
 $('cardAmount').oninput=updateTripTotal;
 $('cashAmount').oninput=updateTripTotal;
 $('date').onchange=render;$('shift').oninput=render;updateTripTotal();render();renderHistory();
-</script></body></html>
+</script>
+<script id="v23-cash-totals">
+(function(){
+const fmtDateV23=x=>{let p=String(x||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:x};
+function rangeDataV23(){
+  let a=$('fromDate').value,b=$('toDate').value;
+  if(!a||!b)return null;
+  if(a>b){let t=a;a=b;b=t;}
+  let t=trips.filter(x=>x.date>=a&&x.date<=b);
+  let e=expenses.filter(x=>x.date>=a&&x.date<=b);
+  let gross=t.reduce((s,x)=>s+(Number(x.amount)||0),0);
+  let card=t.reduce((s,x)=>s+(Number(x.card)||0),0);
+  let cash=t.reduce((s,x)=>s+(Number(x.cash)||0),0);
+  let tips=t.reduce((s,x)=>s+(Number(x.tip)||0),0);
+  let ex=e.reduce((s,x)=>s+(Number(x.amount)||0),0);
+  return {a,b,t,e,gross,card,cash,tips,ex,deliver:cash-tips-ex};
+}
+function cashTotalsTextV23(){
+  let r=rangeDataV23();
+  if(!r)return '';
+  let lines=[
+    'Εικόνα ταμείου από '+fmtDateV23(r.a)+' εως '+fmtDateV23(r.b),
+    'Συνολο εσοδων: '+money(r.gross),
+    'Συνολο καρτων: '+money(r.card),
+    'Συνολο μετρητων: '+money(r.cash),
+    'Συνολο εξόδων: '+money(r.ex),
+    'Tips: '+money(r.tips),
+    'Συνολικό παραδοτέο ταμείο: '+money(r.deliver)
+  ];
+  return lines.join(String.fromCharCode(10));
+}
+window.showCashTotals=function(){
+  let r=rangeDataV23();
+  if(!r)return alert('Επίλεξε πρώτη και τελευταία ημερομηνία.');
+  $('cashTotalsResult').innerHTML=
+    '<div class="stats">'+
+    '<div class="stat">Συνολο εσοδων<b>'+money(r.gross)+'</b></div>'+
+    '<div class="stat">Συνολο καρτων<b>'+money(r.card)+'</b></div>'+
+    '<div class="stat">Συνολο μετρητων<b>'+money(r.cash)+'</b></div>'+
+    '<div class="stat">Συνολο εξόδων<b>'+money(r.ex)+'</b></div>'+
+    '<div class="stat">Tips<b>'+money(r.tips)+'</b></div>'+
+    '</div>'+
+    '<div class="total"><b>Συνολικό παραδοτέο ταμείο: '+money(r.deliver)+'</b></div>';
+};
+window.sendCashTotalsWhatsApp=function(){
+  let text=cashTotalsTextV23();
+  if(!text)return alert('Επίλεξε πρώτη και τελευταία ημερομηνία.');
+  share(text);
+};
+window.printCashTotals=function(){
+  let text=cashTotalsTextV23();
+  if(!text)return alert('Επίλεξε πρώτη και τελευταία ημερομηνία.');
+  let old=document.getElementById('v23-print-area');
+  if(old)old.remove();
+  let area=document.createElement('pre');
+  area.id='v23-print-area';
+  area.textContent=text;
+  document.body.appendChild(area);
+  window.print();
+  setTimeout(()=>area.remove(),500);
+};
+$('fromDate').value=$('date').value;
+$('toDate').value=$('date').value;
+})();
+</script>
+</body></html>
