@@ -80,10 +80,32 @@ button{font:inherit;border:0;border-radius:10px;padding:9px 11px;font-weight:700
 
 </main>
 <script>
-const TK='taxi_trips_v1',EK='taxi_expenses_v1';let trips=JSON.parse(localStorage.getItem(TK)||'[]'),expenses=JSON.parse(localStorage.getItem(EK)||'[]');function migrateOldTrips(){
+const TK='taxi_trips_v1',EK='taxi_expenses_v1';let trips=JSON.parse(localStorage.getItem(TK)||'[]'),expenses=JSON.parse(localStorage.getItem(EK)||'[]');
+function tripCreatedAt(x){
+  if(x.createdAt){ const d=new Date(x.createdAt); if(!isNaN(d)) return d.getTime(); }
+  const m=String(x.time||'').match(/(\d{1,2})[:.](\d{2})/);
+  if(x.date){ const parts=String(x.date).split('-').map(Number); if(parts.length===3){ return new Date(parts[0],parts[1]-1,parts[2],m?+m[1]:0,m?+m[2]:0,0,0).getTime(); } }
+  return 0;
+}
+function isTripLocked(x){ return !!x.lockedAt || (tripCreatedAt(x)>0 && Date.now()-tripCreatedAt(x)>=24*60*60*1000); }
+function lockExpiredTrips(){
+  let changed=false,now=new Date().toISOString();
+  trips=trips.map(x=>{ if(!x.lockedAt && isTripLocked(x)){changed=true;return {...x,lockedAt:now,lockReason:'24h'};} return x; });
+  if(changed)localStorage.setItem(TK,JSON.stringify(trips));
+}
+function lockShiftTrips(d,s,reason){
+  let changed=false,now=new Date().toISOString();
+  trips=trips.map(x=>{if(x.date==d && x.shift==s && !x.lockedAt){changed=true;return {...x,lockedAt:now,lockReason:reason};}return x;});
+  if(changed)localStorage.setItem(TK,JSON.stringify(trips));
+  return changed;
+}
+function migrateOldTrips(){
 let changed=false;
 trips=trips.map(x=>{
-if(typeof x.card==='number'&&typeof x.cash==='number')return x;
+if(typeof x.card==='number'&&typeof x.cash==='number'){
+  if(!x.createdAt){x={...x,createdAt:new Date(tripCreatedAt(x)||Date.now()).toISOString()};changed=true;}
+  return x;
+}
 let amount=Number(x.amount)||0;
 changed=true;
 return {...x,amount,card:x.pay==='card'?amount:0,cash:x.pay==='cash'?amount:0};
@@ -91,6 +113,7 @@ return {...x,amount,card:x.pay==='card'?amount:0,cash:x.pay==='cash'?amount:0};
 if(changed)localStorage.setItem(TK,JSON.stringify(trips));
 }
 migrateOldTrips();
+lockExpiredTrips();
 
 const $=x=>document.getElementById(x),money=x=>Number(x||0).toLocaleString('el-GR',{minimumFractionDigits:2,maximumFractionDigits:2})+'€';
 $('date').value=new Date().toISOString().slice(0,10);$('hdate').value=$('date').value;$('group').value=localStorage.getItem('taxi_group')||'';$('group').oninput=()=>localStorage.setItem('taxi_group',$('group').value);
@@ -101,7 +124,7 @@ let card=+$('cardAmount').value||0,cash=+$('cashAmount').value||0,total=card+cas
 if(total<=0)return alert('Βάλε ποσό σε κάρτα ή/και μετρητά.');
 let route=$('route').value.trim()||'Χωρίς περιγραφή';
 let tip=+$('tip').value||0;
-let x={id:Date.now(),date:$('date').value,shift:$('shift').value.trim(),route,amount:total,card,cash,tip,time:new Date().toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'})};
+let x={id:Date.now(),date:$('date').value,shift:$('shift').value.trim(),route,amount:total,card,cash,tip,time:new Date().toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'}),createdAt:new Date().toISOString()};
 trips.push(x);
 $('route').value='';$('cardAmount').value='';$('cashAmount').value='';$('tip').value=0;updateTripTotal();save();
 share(tripText(x));
@@ -109,13 +132,19 @@ share(tripText(x));
 function addTrip(){
 let card=+$('cardAmount').value||0,cash=+$('cashAmount').value||0,total=card+cash;
 if(total<=0)return alert('Βάλε ποσό σε κάρτα ή/και μετρητά.');
-trips.push({id:Date.now(),date:$('date').value,shift:$('shift').value.trim(),route:$('route').value.trim()||'Χωρίς περιγραφή',amount:total,card,cash,tip:+$('tip').value||0,time:new Date().toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'})});
+trips.push({id:Date.now(),date:$('date').value,shift:$('shift').value.trim(),route:$('route').value.trim()||'Χωρίς περιγραφή',amount:total,card,cash,tip:+$('tip').value||0,time:new Date().toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'}),createdAt:new Date().toISOString()});
 $('route').value='';$('cardAmount').value='';$('cashAmount').value='';$('tip').value=0;updateTripTotal();save()
 }
 
 function addExpense(){let d=$('ed').value.trim(),a=+$('ea').value;if(!d)return alert('Βάλε περιγραφή.');if(!a)return alert('Βάλε ποσό.');expenses.push({id:Date.now(),date:$('date').value,shift:$('shift').value.trim(),description:d,amount:a,time:new Date().toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'})});$('ed').value='';$('ea').value='';save()}
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
-function share(text){if(navigator.share) return navigator.share({title:'Taxi Shift',text}).catch(e=>{if(e.name!='AbortError')fallback(text)});fallback(text)}
+async function share(text){
+  if(navigator.share){
+    try{await navigator.share({title:'Taxi Shift',text});return true;}
+    catch(e){if(e.name==='AbortError')return false;fallback(t=text);return true;}
+  }
+  fallback(text);return true;
+}
 function fallback(t){navigator.clipboard?.writeText(t).then(()=>alert('Το μήνυμα αντιγράφηκε. Άνοιξε το WhatsApp Group και κάνε επικόλληση.')).catch(()=>prompt('Αντέγραψε:',t))}
 function paymentLabel(x){
 let c=Number(x.card)||0,m=Number(x.cash)||0;
@@ -140,12 +169,12 @@ return lines.join(String.fromCharCode(10));
 
 function sendTrip(id){let x=trips.find(x=>x.id==id);if(x)share(tripText(x))}
 function summaryText(d,s){let r=calc(d,s),fmtDate=x=>{let p=String(x||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:x},t='Ημερομηνία: '+fmtDate(d)+'\nΓενικό σύνολο: '+money(r.gross)+'\nΚάρτα: '+money(r.card)+'\nΜετρητά: '+money(r.cash)+'\nTips: '+money(r.tips)+'\nΈξοδα:';if(r.e.length)r.e.forEach(x=>t+='\n- '+x.description+': '+money(x.amount));else t+='\n- Κανένα';return t+'\nΠαραδοτέο ταμείο: '+money(r.deliver)}
-function sendSummary(){let d=$('date').value,s=$('shift').value.trim(),r=calc(d,s);if(!r.t.length&&!r.e.length)return alert('Δεν υπάρχουν δεδομένα.');share(summaryText(d,s))}
+async function sendSummary(){let d=$('date').value,s=$('shift').value.trim(),r=calc(d,s);if(!r.t.length&&!r.e.length)return alert('Δεν υπάρχουν δεδομένα.');if(!s)return alert('Βάλε όνομα βάρδιας πριν στείλεις την αναφορά.');let sent=await share(summaryText(d,s));if(sent){lockShiftTrips(d,s,'shift-report');render();renderHistory();alert('Η αναφορά στάλθηκε και τα δρομολόγια της βάρδιας κλειδώθηκαν. Δεν μπορούν πλέον να διαγραφούν.')}}
 function render(){let d=$('date').value,s=$('shift').value.trim(),r=calc(d,s);$('gross').textContent=money(r.gross);$('card').textContent=money(r.card);$('cash').textContent=money(r.cash);$('tips').textContent=money(r.tips);$('ex').textContent=money(r.ex);$('deliver').textContent=money(r.deliver);
-$('tripsList').innerHTML=r.t.length?r.t.map(x=>'<div class="row"><div><b>'+esc(x.route)+'</b><div class="small">'+x.time+' · '+paymentLabel(x)+(x.tip?' · tips -'+money(x.tip):'')+'</div></div><div><b>'+money(x.amount)+'</b><div class="actions"><button class="wa" onclick="sendTrip('+x.id+')">📲 WhatsApp</button><button class="danger" onclick="delTrip('+x.id+')">Διαγραφή</button></div></div></div>').join(''):'<div class="small">Δεν υπάρχουν δρομολόγια.</div>';
+$('tripsList').innerHTML=r.t.length?r.t.map(x=>{let locked=isTripLocked(x);return '<div class="row"><div><b>'+esc(x.route)+'</b><div class="small">'+x.time+' · '+paymentLabel(x)+(x.tip?' · tips -'+money(x.tip):'')+(locked?' · 🔒 Κλειδωμένο':'')+'</div></div><div><b>'+money(x.amount)+'</b><div class="actions"><button class="wa" onclick="sendTrip('+x.id+')">📲 WhatsApp</button>'+(locked?'<button class="muted" disabled>🔒 Κλειδωμένο</button>':'<button class="danger" onclick="delTrip('+x.id+')">Διαγραφή</button>')+'</div></div></div>'}).join(''):'<div class="small">Δεν υπάρχουν δρομολόγια.</div>';
 $('expensesList').innerHTML=r.e.length?r.e.map(x=>'<div class="row"><div><b>'+esc(x.description)+'</b><div class="small">'+x.time+'</div></div><div><b>'+money(x.amount)+'</b> <button class="danger" onclick="delExp('+x.id+')">Διαγραφή</button></div></div>').join(''):'<div class="small">Δεν υπάρχουν έξοδα.</div>'}
-function delTrip(id){trips=trips.filter(x=>x.id!=id);save()}function delExp(id){expenses=expenses.filter(x=>x.id!=id);save()}
-function clearShift(){let d=$('date').value,s=$('shift').value.trim();if(confirm('Να διαγραφούν όλα τα δεδομένα αυτής της βάρδιας;')){trips=trips.filter(x=>!(x.date==d&&x.shift==s));expenses=expenses.filter(x=>!(x.date==d&&x.shift==s));save()}}
+function delTrip(id){let x=trips.find(x=>x.id==id);if(!x)return;if(isTripLocked(x)){alert('Το δρομολόγιο είναι κλειδωμένο και δεν μπορεί να διαγραφεί.');return;}trips=trips.filter(x=>x.id!=id);save()}function delExp(id){expenses=expenses.filter(x=>x.id!=id);save()}
+function clearShift(){let d=$('date').value,s=$('shift').value.trim();if(trips.some(x=>x.date==d&&x.shift==s&&isTripLocked(x))){return alert('Η βάρδια περιέχει κλειδωμένα δρομολόγια και δεν μπορεί να καθαριστεί.');}if(confirm('Να διαγραφούν όλα τα δεδομένα αυτής της βάρδιας;')){trips=trips.filter(x=>!(x.date==d&&x.shift==s));expenses=expenses.filter(x=>!(x.date==d&&x.shift==s));save()}}
 function tab(n){$('today').style.display=n?'none':'block';$('history').style.display=n?'block':'none';$('tt').classList.toggle('active',!n);$('th').classList.toggle('active',!!n);if(n)renderHistory()}
 function renderHistory(){let ds=[...new Set([...trips.map(x=>x.date),...expenses.map(x=>x.date)])].sort().reverse();$('days').innerHTML=ds.length?ds.map(d=>{let r=calc(d);return '<div class="day" onclick="selectDay(\''+d+'\')"><b>'+d+'</b><div class="small">'+r.t.length+' δρομολόγια · '+r.e.length+' έξοδα · Σύνολο '+money(r.gross)+' · Παραδοτέο '+money(r.deliver)+'</div></div>'}).join(''):'<div class="small">Δεν υπάρχουν προηγούμενες ημέρες.</div>';renderHistoryDay()}
 function selectDay(d){$('hdate').value=d;renderHistoryDay()}
