@@ -80,7 +80,7 @@ button{font:inherit;border:0;border-radius:10px;padding:9px 11px;font-weight:700
 </section>
 
 </main>
-<footer style="text-align:center;padding:4px 0 14px"><small style="color:#8a9491">v2.5 · created by dvourtsis</small></footer>
+<footer style="text-align:center;padding:4px 0 14px"><small style="color:#8a9491">v2.6.1 FIXED · created by dvourtsis</small></footer>
 <script>
 const TK='taxi_trips_v1',EK='taxi_expenses_v1',SK='taxi_active_shift_v1';
 let trips=JSON.parse(localStorage.getItem(TK)||'[]'),expenses=JSON.parse(localStorage.getItem(EK)||'[]');
@@ -89,8 +89,11 @@ function currentShift(){return (activeShift&&activeShift.date===$('date')?.value
 function shiftOpenForDate(d){return !!activeShift&&activeShift.date===d&&!activeShift.closedAt}
 function shiftLabel(){return activeShift?'Βάρδια '+new Date(activeShift.openedAt).toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'}):'Δεν υπάρχει ανοιχτή βάρδια'}
 function openShift(){
-  if(activeShift&&!activeShift.closedAt)return alert('Υπάρχει ήδη ανοιχτή βάρδια.');
-  const d=$('date').value;
+  const d=$('date').value || new Date().toISOString().slice(0,10);
+  if(activeShift&&!activeShift.closedAt){
+    if(activeShift.date===d)return alert('Υπάρχει ήδη ανοιχτή βάρδια για αυτή την ημερομηνία.');
+    activeShift={...activeShift,closedAt:new Date().toISOString(),autoClosed:true};localStorage.setItem(SK,JSON.stringify(activeShift));
+  }
   activeShift={id:String(Date.now()),date:d,openedAt:new Date().toISOString(),closedAt:null,reportSent:false};
   localStorage.setItem(SK,JSON.stringify(activeShift));
   render();
