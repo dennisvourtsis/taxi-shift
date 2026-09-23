@@ -89,11 +89,8 @@ function currentShift(){return (activeShift&&activeShift.date===$('date')?.value
 function shiftOpenForDate(d){return !!activeShift&&activeShift.date===d&&!activeShift.closedAt}
 function shiftLabel(){return activeShift?'Βάρδια '+new Date(activeShift.openedAt).toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'}):'Δεν υπάρχει ανοιχτή βάρδια'}
 function openShift(){
-  const d=$('date').value || new Date().toISOString().slice(0,10);
-  if(activeShift&&!activeShift.closedAt){
-    if(activeShift.date===d)return alert('Υπάρχει ήδη ανοιχτή βάρδια για αυτή την ημερομηνία.');
-    activeShift={...activeShift,closedAt:new Date().toISOString(),autoClosed:true};localStorage.setItem(SK,JSON.stringify(activeShift));
-  }
+  const d=$('date').value;
+  if(activeShift&&!activeShift.closedAt&&activeShift.date===d)return alert('Υπάρχει ήδη ανοιχτή βάρδια για αυτή την ημερομηνία.');
   activeShift={id:String(Date.now()),date:d,openedAt:new Date().toISOString(),closedAt:null,reportSent:false};
   localStorage.setItem(SK,JSON.stringify(activeShift));
   render();
@@ -201,7 +198,7 @@ function sendTrip(id){let x=trips.find(x=>x.id==id);if(x)share(tripText(x))}
 function summaryText(d,s){let r=calc(d,s),fmtDate=x=>{let p=String(x||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:x},t='Ημερομηνία: '+fmtDate(d)+'\nΓενικό σύνολο: '+money(r.gross)+'\nΚάρτα: '+money(r.card)+'\nΜετρητά: '+money(r.cash)+'\nTips: '+money(r.tips)+'\nΈξοδα:';if(r.e.length)r.e.forEach(x=>t+='\n- '+x.description+': '+money(x.amount));else t+='\n- Κανένα';return t+'\nΠαραδοτέο ταμείο: '+money(r.deliver)}
 async function sendSummary(){let d=$('date').value,s=currentShift(),r=calc(d,s);if(!s||!activeShift||activeShift.date!==d)return alert('Άνοιξε πρώτα τη βάρδια.');if(!r.t.length&&!r.e.length)return alert('Δεν υπάρχουν δεδομένα.');let sent=await share(summaryText(d,s));if(sent){lockShiftTrips(d,s,'shift-report');activeShift={...activeShift,reportSent:true,closedAt:activeShift.closedAt||new Date().toISOString()};localStorage.setItem(SK,JSON.stringify(activeShift));render();renderHistory();alert('Η αναφορά στάλθηκε και τα δρομολόγια της βάρδιας κλειδώθηκαν. Δεν μπορούν πλέον να διαγραφούν.')}}
 function render(){let d=$('date').value,s=currentShift(),r=calc(d,s);let open=shiftOpenForDate(d),sameShift=!!activeShift&&activeShift.date===d;
-$('openShiftBtn').textContent=open?'🟢 Βάρδια ανοιχτή':'▶️ Άνοιγμα βάρδιας';$('openShiftBtn').disabled=open||!!activeShift&&!activeShift.closedAt; $('closeShiftBtn').disabled=!open; $('shiftStatus').textContent=sameShift?(activeShift.closedAt?'Κλειστή βάρδια · '+new Date(activeShift.openedAt).toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'}):'Ανοιχτή από '+new Date(activeShift.openedAt).toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'})):'Δεν υπάρχει βάρδια για αυτή την ημερομηνία';
+$('openShiftBtn').textContent=open?'🟢 Βάρδια ανοιχτή':'▶️ Άνοιγμα βάρδιας';$('openShiftBtn').disabled=open; $('closeShiftBtn').disabled=!open; $('shiftStatus').textContent=sameShift?(activeShift.closedAt?'Κλειστή βάρδια · '+new Date(activeShift.openedAt).toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'}):'Ανοιχτή από '+new Date(activeShift.openedAt).toLocaleTimeString('el-GR',{hour:'2-digit',minute:'2-digit'})):'Δεν υπάρχει βάρδια για αυτή την ημερομηνία';
 $('route').disabled=!open;$('cardAmount').disabled=!open;$('cashAmount').disabled=!open;$('tip').disabled=!open;$('saveWhatsappBtn').disabled=!open;
 $('gross').textContent=money(r.gross);$('card').textContent=money(r.card);$('cash').textContent=money(r.cash);$('tips').textContent=money(r.tips);$('ex').textContent=money(r.ex);$('deliver').textContent=money(r.deliver);
 $('tripsList').innerHTML=r.t.length?r.t.map(x=>{let locked=isTripLocked(x);return '<div class="row"><div><b>'+esc(x.route)+'</b><div class="small">'+x.time+' · '+paymentLabel(x)+(x.tip?' · tips -'+money(x.tip):'')+(locked?' · 🔒 Κλειδωμένο':'')+'</div></div><div><b>'+money(x.amount)+'</b><div class="actions"><button class="wa" onclick="sendTrip('+x.id+')">📲 WhatsApp</button>'+(locked?'<button class="muted" disabled>🔒 Κλειδωμένο</button>':'<button class="danger" onclick="delTrip('+x.id+')">Διαγραφή</button>')+'</div></div></div>'}).join(''):'<div class="small">Δεν υπάρχουν δρομολόγια.</div>';
